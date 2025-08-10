@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Local Body Measurements Tracker — Imperial (IndexedDB)</title>
+<style>
+  :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;--card:#fff;--muted:#666}
+  body{background:#f7f8fb;color:#111;margin:0;padding:16px}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  h1{font-size:18px;margin:0}
+  .card{background:var(--card);border-radius:10px;padding:12px;box-shadow:0 1px 2px rgba(0,0,0,.06);margin-bottom:12px}
+  label{display:block;font-size:13px;margin-top:6px}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+  input[type="number"], input[type="date"], input[type="text"], select{width:100%;padding:8px;border-radius:6px;border:1px solid #d0d5dd}
+  .row{display:flex;gap:8px;align-items:center}
+  button{background:#0b78e3;color:#fff;border:none;padding:8px 10px;border-radius:8px;font-weight:600}
+  .btn-ghost{background:#fff;border:1px solid #d0d5dd;color:#111}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:6px 8px;text-align:left;border-bottom:1px solid #eef2f7}
+  .muted{color:var(--muted);font-size:13px}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .metric-checkbox{display:inline-flex;align-items:center;gap:6px;margin-right:8px;cursor:pointer}
+  canvas{width:100%;height:320px;background:#fff;border-radius:8px}
+  .small{font-size:12px;color:#555}
+  footer{font-size:12px;color:#666;margin-top:8px}
+  .settings{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .pill{padding:6px 8px;border-radius:999px;border:1px solid #e0e6ef;background:#fff}
+  .photos-row{display:flex;gap:8px;overflow:auto;padding-top:8px}
+  .photo-thumb{width:80px;height:100px;object-fit:cover;border-radius:6px;border:1px solid #ddd}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:999}
+  .modal .box{background:white;padding:12px;border-radius:8px;max-width:920px;width:96%}
+  .hide{display:none}
+  @media (max-width:520px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><h1>Body Measurements — Imperial</h1></header>
+
+<div class="card">
+  <div class="small muted">Settings — stored locally. Height (in) required for BMI. Uses imperial units (lb, in).</div>
+  <div style="margin-top:8px" class="settings">
+    <label class="pill">Height (in)<input id="heightIn" type="number" step="0.1" style="margin-left:8px;width:90px" placeholder="70"></label>
+    <button id="saveSettings" class="btn-ghost">Save</button>
+    <div style="margin-left:auto" class="small muted">Settings stored locally.</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="small muted">1) Add a new measurement (date + values). Photos optional. Data stored locally (IndexedDB).</div>
+  <div style="margin-top:8px;" class="grid">
+    <div><label for="date">Date</label><input id="date" type="date"/></div>
+    <div><label for="notes">Notes (optional)</label><input id="notes" type="text" placeholder="e.g. after workout"/></div>
+
+    <div><label for="weight">Weight (lb)</label><input id="weight" type="number" step="0.1" placeholder="e.g. 172.4"/></div>
+    <div><label for="bodyfat">Body Fat %</label><input id="bodyfat" type="number" step="0.1" placeholder="e.g. 18.5"/></div>
+
+    <div><label for="waist">Waist (in)</label><input id="waist" type="number" step="0.1" placeholder="e.g. 34"/></div>
+    <div><label for="hips">Hips (in)</label><input id="hips" type="number" step="0.1" placeholder="e.g. 38"/></div>
+
+    <div><label for="chest">Chest (in)</label><input id="chest" type="number" step="0.1" placeholder="e.g. 40"/></div>
+    <div><label for="neck">Neck (in)</label><input id="neck" type="number" step="0.1" placeholder="e.g. 15"/></div>
+
+    <div><label for="biceps_l">Left Biceps (in)</label><input id="biceps_l" type="number" step="0.1" placeholder="e.g. 13"/></div>
+    <div><label for="biceps_r">Right Biceps (in)</label><input id="biceps_r" type="number" step="0.1" placeholder="e.g. 13"/></div>
+
+    <div><label for="thigh_l">Left Thigh (in)</label><input id="thigh_l" type="number" step="0.1" placeholder="e.g. 22"/></div>
+    <div><label for="thigh_r">Right Thigh (in)</label><input id="thigh_r" type="number" step="0.1" placeholder="e.g. 22"/></div>
+
+    <div style="grid-column:1/3">
+      <label for="photo">Progress photo (optional)</label>
+      <input id="photo" type="file" accept="image/*">
+    </div>
+  </div>
+
+  <div style="margin-top:10px" class="row">
+    <button id="saveBtn">Save Entry</button>
+    <button id="clearBtn" class="btn-ghost">Clear All Data</button>
+    <button id="clearDummyBtn" class="btn-ghost">Clear Dummy Data</button>
+    <button id="exportJsonBtn" class="btn-ghost">Export JSON (incl photos)</button>
+    <button id="exportCsvBtn" class="btn-ghost">Export CSV (metrics only)</button>
+    <div style="margin-left:auto" class="small muted">Storage: <span id="storageInfo">—</span></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="small muted">2) Charting. Tap a metric name to view standalone metric. Smoothing and trendline available.</div>
+  <div id="metricControls" class="controls" style="margin-top:8px"></div>
+
+  <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+    <label class="pill">Smoothing
+      <select id="smoothingSelect" style="margin-left:8px">
+        <option value="none">None</option>
+        <option value="weekly">Weekly (7-day)</option>
+        <option value="monthly">Monthly (30-day)</option>
+      </select>
+    </label>
+
+    <label class="pill"><input id="trendToggle" type="checkbox" style="margin-right:6px"> Show trend line</label>
+
+    <button id="exportJpeg" class="btn-ghost" style="margin-left:auto">Download chart (JPEG)</button>
+  </div>
+
+  <canvas id="chartCanvas"></canvas>
+  <div id="photoStrip" class="photos-row hide"></div>
+  <div style="margin-top:8px"><button id="openTimeline" class="btn-ghost">Open full-screen photo timeline</button></div>
+</div>
+
+<div class="card">
+  <div class="small muted">3) Data table (most recent first). Tap an entry to edit. Photos can be viewed inline.</div>
+  <div id="tableWrap" style="overflow:auto;max-height:260px;margin-top:8px"></div>
+</div>
+
+<div id="modal" class="modal hide"><div class="box">
+  <div style="display:flex;justify-content:space-between;align-items:center"><strong>Photo timeline</strong><button id="closeModal" class="btn-ghost">Close</button></div>
+  <div id="timelineStrip" style="display:flex;gap:12px;overflow:auto;padding-top:12px;margin-top:8px"></div>
+</div></div>
+
+<footer class="small muted">IndexedDB used for storage (measurements + photos). JSON export embeds photos as data URLs. CSV export contains metrics only.</footer>
+
+<script>
+/* ====== CONFIG & METRICS ====== */
+const METRICS = [
+  {key:'weight', label:'Weight (lb)'},
+  {key:'bodyfat', label:'Body Fat %'},
+  {key:'waist', label:'Waist (in)'},
+  {key:'hips', label:'Hips (in)'},
+  {key:'chest', label:'Chest (in)'},
+  {key:'neck', label:'Neck (in)'},
+  {key:'biceps_l', label:'Left Biceps (in)'},
+  {key:'biceps_r', label:'Right Biceps (in)'},
+  {key:'thigh_l', label:'Left Thigh (in)'},
+  {key:'thigh_r', label:'Right Thigh (in)'},
+  {key:'bmi', label:'BMI (lb/in² *703)', computed:true},
+  {key:'leanmass', label:'Lean Mass (lb)', computed:true}
+];
+const DB_NAME = 'body_tracker_db_v1';
+const STORE_ENTRIES = 'entries';
+const STORE_PHOTOS = 'photos';
+const SETTINGS_KEY = 'body_tracker_settings_v1';
+
+/* ====== Small placeholder images (base64) ====== */
+/* Three tiny colored JPEG placeholders encoded as data URLs */
+const PLACEHOLDERS = [
+  "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBxMTEhUTExMWFhUXGR8bGBgYGB0aGxwcGhwaGxodHx0fHSggGBolGx8cITEhJSkrLi4uGSAzODMtNygtLisBCgoKDg0OGxAQGi0lHyUtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLf/AABEIAJ8BPgMBIgACEQEDEQH/xAAbAAACAwEBAQAAAAAAAAAAAAAEBQMGAAECB//EADoQAAIBAgQDBgQFBAMAAAAAAAECAwQRAAUSITFBEyJRYXGBkaGx8BRCUrHB0fEjM2JyguLxFf/EABoBAQADAQEBAAAAAAAAAAAAAAABAgMEBQb/xAApEQACAgIBAwMDBQAAAAAAAAAAAQIRAwQSITFBEyJRIjNhcYGRocHw/9oADAMBAAIRAxEAPwD8zK2QqU1Y4nkK4z0c6zK2XzGg7oVq7kY2k7aVxwYqDk9nYd7n7a35q9l1o3rZ+s2q1q4s8m7k1p5l2zq2aM0k2q1s2gq4k2p3q1p5b2xq2aM0k2q1s2gq4k2p3q1p5b2xq2aM0k2q1s2gq4k2p3q1p5b2xq2aM0k2q1s2gq4k2p//2Q==",
+  "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBxAQEA8QEBAPEA8QEBAVDw8QEA8QDxAQFREWFhURExUYHSggGBolGxUVITEhJSkrLi4uFx8zODMsNygtLisBCgoKDg0OGxAQGy0lICYtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLf/AABEIAJ8BPgMBIgACEQEDEQH/xAAbAAABBQEBAAAAAAAAAAAAAAAAAgMEBQYBB//EADYQAAIBAgQDBgQGAwAAAAAAAAECEQADBBIhMUEFEyJRYXGBkaGx8BRCUrHB0fEjM2JyguLxFf/EABkBAAMBAQEAAAAAAAAAAAAAAAABAgMEBf/EACIRAAMAAgICAgMBAAAAAAAAAAABAhEDITEEEkFRImFx8P/aAAwDAQACEQMRAD8A8blq1q1q1q2X1rYq1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q//2Q==",
+  "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBxAQEBAQEA8QEA8QEA8QEA8QEA8QFREWFhURExUYHSggGBolGxUVITEhJSkrLi4uFx8zODMsNygtLisBCgoKDg0OGxAQGysmICUtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLf/AABEIAJ8BPgMBIgACEQEDEQH/xAAbAAABBQEBAAAAAAAAAAAAAAAFAQIDBAYAB//EADYQAAIBAgQDBgQFBQAAAAAAAAECAwQRAAUSIRMxQVEiYXGBkRQygZGhscHR8DLS4SNDYqL/xAAYAQADAQEAAAAAAAAAAAAAAAAAAQIDBP/EACIRAAMAAgICAgMBAAAAAAAAAAABAhEDITEEEkFRImFxgf/aAAwDAQACEQMRAD8A9rK6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6u//2Q=="
+];
+
+/* ====== IndexedDB helpers ====== */
+function openDb(){ return new Promise((res,rej)=>{
+  const r = indexedDB.open(DB_NAME, 1);
+  r.onupgradeneeded = e=>{
+    const db = e.target.result;
+    if(!db.objectStoreNames.contains(STORE_ENTRIES)) db.createObjectStore(STORE_ENTRIES, {keyPath:'id'});
+    if(!db.objectStoreNames.contains(STORE_PHOTOS)) db.createObjectStore(STORE_PHOTOS, {keyPath:'id'});
+  };
+  r.onsuccess = ()=> res(r.result);
+  r.onerror = ()=> rej(r.error);
+});}
+async function idbPut(store, obj){ const db = await openDb(); return new Promise((res,rej)=>{ const tx = db.transaction(store,'readwrite'); tx.objectStore(store).put(obj); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); });}
+async function idbGetAll(store){ const db = await openDb(); return new Promise((res,rej)=>{ const tx = db.transaction(store,'readonly'); const req = tx.objectStore(store).getAll(); req.onsuccess=()=>res(req.result); req.onerror=()=>rej(req.error); });}
+async function idbGet(store, key){ const db = await openDb(); return new Promise((res,rej)=>{ const tx=db.transaction(store,'readonly'); const req=tx.objectStore(store).get(key); req.onsuccess=()=>res(req.result); req.onerror=()=>rej(tx.error); });}
+async function idbDelete(store, key){ const db = await openDb(); return new Promise((res,rej)=>{ const tx=db.transaction(store,'readwrite'); const req=tx.objectStore(store).delete(key); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); });}
+async function idbClear(store){ const db = await openDb(); return new Promise((res,rej)=>{ const tx=db.transaction(store,'readwrite'); const req=tx.objectStore(store).clear(); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); });}
+
+/* ====== Utilities ====== */
+function uid(){ return Math.random().toString(36).slice(2,9); }
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function readSettings(){ try{ return JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}') }catch(e){return {} } }
+function writeSettings(s){ localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)) }
+
+/* ====== UI init ====== */
+document.getElementById('date').value = todayISO();
+const metricControls = document.getElementById('metricControls');
+function renderMetricControls(){
+  metricControls.innerHTML='';
+  METRICS.forEach((m,i)=>{ if(m.computed) return; const el=document.createElement('label'); el.className='metric-checkbox'; el.innerHTML=`<input type="checkbox" data-key="${m.key}" ${i<3?'checked':''}/> <span data-key="${m.key}" class="metric-name">${m.label}</span>`; metricControls.appendChild(el);});
+  document.querySelectorAll('.metric-name').forEach(el=>el.addEventListener('click', ()=> openStandaloneMetric(el.getAttribute('data-key'))));
+}
+renderMetricControls();
+
+/* populate settings */
+const s = readSettings();
+if(s.heightIn) document.getElementById('heightIn').value = s.heightIn;
+document.getElementById('saveSettings').addEventListener('click', ()=>{ const h=parseFloat(document.getElementById('heightIn').value); if(!h||h<=0){alert('Please enter valid height in inches.');return;} writeSettings({heightIn:h}); alert('Settings saved.'); });
+
+/* ====== Save / Clear / Export / Dummy data ====== */
+document.getElementById('saveBtn').addEventListener('click', saveEntry);
+document.getElementById('clearBtn').addEventListener('click', clearAllFlow);
+document.getElementById('clearDummyBtn').addEventListener('click', clearDummyData);
+document.getElementById('exportJsonBtn').addEventListener('click', exportJson);
+document.getElementById('exportCsvBtn').addEventListener('click', exportCsv);
+
+async function saveEntry(){
+  const date = document.getElementById('date').value; if(!date){ alert('Pick a date'); return;}
+  const notes = document.getElementById('notes').value || '';
+  const id = uid();
+  const values = {};
+  METRICS.forEach(m=>{ if(m.computed) return; const el=document.getElementById(m.key); if(el && el.value!=='') values[m.key]=parseFloat(el.value); });
+  const entry = {id, date, notes, values, created: new Date().toISOString(), dummy:false};
+  const fileInput = document.getElementById('photo');
+  if(fileInput.files && fileInput.files[0]){
+    const file = fileInput.files[0];
+    const reader = new FileReader();
+    reader.onload = async function(ev){
+      const dataUrl = ev.target.result;
+      await idbPut(STORE_PHOTOS, {id, dataUrl, name: file.name, type: file.type});
+      await idbPut(STORE_ENTRIES, entry);
+      refreshAll();
+      fileInput.value='';
+      alert('Saved (with photo).');
+    };
+    reader.readAsDataURL(file);
+  } else {
+    await idbPut(STORE_ENTRIES, entry);
+    refreshAll();
+    alert('Saved.');
+  }
+}
+
+/* double-confirm clear all */
+async function clearAllFlow(){
+  if(!confirm('This will permanently delete ALL data (measurements + photos). Proceed?')) return;
+  const word = prompt('Type DELETE ALL to confirm irreversible wipe:');
+  if(word !== 'DELETE ALL'){ alert('Aborted.'); return; }
+  await idbClear(STORE_ENTRIES);
+  await idbClear(STORE_PHOTOS);
+  localStorage.removeItem(SETTINGS_KEY);
+  refreshAll();
+  alert('All data cleared.');
+}
+
+/* clear dummy only */
+async function clearDummyData(){
+  if(!confirm('Remove only dummy entries?')) return;
+  const entries = await idbGetAll(STORE_ENTRIES);
+  const dummies = entries.filter(e=> e.dummy);
+  for(const e of dummies) await idbDelete(STORE_ENTRIES, e.id);
+  for(const d of dummies) await idbDelete(STORE_PHOTOS, d.id);
+  refreshAll();
+  alert('Dummy data removed.');
+}
+
+/* exports */
+async function exportJson(){
+  const entries = await idbGetAll(STORE_ENTRIES);
+  const photos = await idbGetAll(STORE_PHOTOS);
+  const merged = entries.map(e=>{
+    const p = photos.find(x=>x.id===e.id);
+    return {...e, photo: p ? {name:p.name, type:p.type, dataUrl:p.dataUrl} : null};
+  });
+  const blob = new Blob([JSON.stringify(merged, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='body_tracker_export.json'; a.click(); URL.revokeObjectURL(url);
+}
+
+async function exportCsv(){
+  const entries = await idbGetAll(STORE_ENTRIES);
+  const settings = readSettings();
+  const h = settings.heightIn;
+  const rows = [];
+  const header = ['id','date','notes'].concat(METRICS.map(m=>m.label));
+  rows.push(header.join(','));
+  entries.sort((a,b)=> new Date(a.date)-new Date(b.date));
+  for(const e of entries){
+    const comp = computeDerived(e, h);
+    const row = [e.id, e.date, `"${(e.notes||'').replace(/"/g,'""')}"`].concat(METRICS.map(m=>{
+      const v = comp[m.key];
+      return (v===null||v===undefined)?'':v;
+    }));
+    rows.push(row.join(','));
+  }
+  const blob = new Blob([rows.join('\n')], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='body_tracker_metrics.csv'; a.click(); URL.revokeObjectURL(url);
+}
+
+/* ====== Table rendering ====== */
+async function renderTable(){
+  const wrap = document.getElementById('tableWrap');
+  const entries = await idbGetAll(STORE_ENTRIES);
+  if(!entries.length){ wrap.innerHTML = '<div class="small muted">No entries yet.</div>'; return; }
+  entries.sort((a,b)=> new Date(b.date)-new Date(a.date));
+  let html = '<table><thead><tr><th>Date</th><th>Notes</th>';
+  METRICS.forEach(m=> html += `<th>${m.label}</th>`);
+  html += '<th>Photo</th><th></th></tr></thead><tbody>';
+  for(const e of entries){
+    const comp = computeDerived(e, readSettings().heightIn);
+    html += `<tr data-id="${e.id}"><td style="white-space:nowrap">${e.date}</td><td>${e.notes||''}</td>`;
+    for(const m of METRICS) html += `<td>${(comp[m.key]!==null&&comp[m.key]!==undefined)?comp[m.key]:''}</td>`;
+    const photo = await idbGet(STORE_PHOTOS, e.id);
+    html += `<td>${photo?'<img src="'+photo.dataUrl+'" class="photo-thumb">':''}</td>`;
+    html += `<td style="white-space:nowrap"><button class="btn-ghost" data-edit="${e.id}">Edit</button> <button class="btn-ghost" data-delete="${e.id}">Delete</button></td></tr>`;
+  }
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+  wrap.querySelectorAll('[data-delete]').forEach(btn=> btn.addEventListener('click', async ev=>{
+    const id = ev.target.getAttribute('data-delete');
+    if(!confirm('Delete entry?')) return;
+    await idbDelete(STORE_ENTRIES, id); await idbDelete(STORE_PHOTOS, id); refreshAll();
+  }));
+  wrap.querySelectorAll('[data-edit]').forEach(btn=> btn.addEventListener('click', async ev=>{
+    const id = ev.target.getAttribute('data-edit');
+    const e = await idbGet(STORE_ENTRIES, id);
+    if(!e) return;
+    document.getElementById('date').value = e.date;
+    document.getElementById('notes').value = e.notes||'';
+    for(const m of METRICS){ if(m.computed) continue; const el=document.getElementById(m.key); if(el) el.value = (e.values && e.values[m.key]!==undefined)? e.values[m.key] : ''; }
+    window.scrollTo({top:0,behavior:'smooth'});
+  }));
+}
+
+/* ====== Derived metrics ====== */
+function computeDerived(entry, heightIn){
+  const out = {};
+  for(const m of METRICS){ if(m.computed){ out[m.key]=null; continue; } out[m.key] = (entry.values && entry.values[m.key]!==undefined)? entry.values[m.key] : null; }
+  if(heightIn && out.weight){ out.bmi = +( (out.weight / (heightIn*heightIn)) * 703 ).toFixed(2); } else out.bmi = null;
+  if(out.weight !== null && out.bodyfat !== null && !isNaN(out.bodyfat)){ out.leanmass = +(out.weight * (1 - (out.bodyfat/100))).toFixed(2); } else out.leanmass = null;
+  return out;
+}
+
+/* ====== Charting (standalone per metric) ====== */
+const canvas = document.getElementById('chartCanvas');
+const ctx = canvas.getContext('2d');
+let activeMetric = null;
+
+function devicePixelRatioFix(){ const ratio = window.devicePixelRatio || 1; const w = canvas.clientWidth; const h = canvas.clientHeight; canvas.width = Math.floor(w*ratio); canvas.height = Math.floor(h*ratio); canvas.style.width = w+'px'; canvas.style.height = h+'px'; ctx.setTransform(ratio,0,0,ratio,0,0); }
+window.addEventListener('resize', ()=>{ devicePixelRatioFix(); renderChart(); });
+
+function getCheckedMetrics(){ const boxes = Array.from(document.querySelectorAll('#metricControls input[type=checkbox]')); return boxes.filter(b=>b.checked).map(b=>b.getAttribute('data-key')); }
+
+async function renderChart(metric=null){
+  devicePixelRatioFix();
+  const entries = await idbGetAll(STORE_ENTRIES);
+  if(!entries.length){ drawNoData(); return; }
+  entries.sort((a,b)=> new Date(a.date)-new Date(b.date));
+  const metricKeys = metric ? [metric] : getCheckedMetrics();
+  if(!metricKeys.length){ drawNoMetric(); return; }
+
+  const labels = entries.map(e=>e.date);
+  const settings = readSettings();
+  const h = settings.heightIn;
+  const series = metricKeys.map(k=> ({key:k, vals: entries.map(e=> { const c=computeDerived(e,h); return (c[k]!==undefined)? c[k] : null; })}) );
+
+  const smoothing = document.getElementById('smoothingSelect').value;
+  const windowDays = smoothing==='weekly'?7: (smoothing==='monthly'?30:1);
+  series.forEach(s=> s.display = windowDays>1? movingAverageByDate(entries, s.vals, windowDays): s.vals);
+
+  let gmin=Infinity,gmax=-Infinity;
+  series.forEach(s=> s.display.forEach(v=>{ if(v!==null && !isNaN(v)){ if(v<gmin) gmin=v; if(v>gmax) gmax=v;} }));
+  if(gmin===Infinity){ drawNoValues(); return; }
+
+  const margin={l:56,r:12,t:20,b:56};
+  const W = canvas.clientWidth - margin.l - margin.r;
+  const H = canvas.clientHeight - margin.t - margin.b;
+  const min=gmin, max=gmax, range=(max-min)||1;
+  const yScale = v => margin.t + H - ((v-min)/range)*H;
+  const xScale = i => margin.l + (i/(labels.length-1||1))*W;
+
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.strokeStyle='#e6e9ee'; ctx.lineWidth=1; ctx.beginPath(); for(let yi=0;yi<=4;yi++){ const y=margin.t+(yi/4)*H; ctx.moveTo(margin.l,y); ctx.lineTo(margin.l+W,y);} ctx.stroke();
+
+  ctx.fillStyle='#444'; ctx.font='12px system-ui';
+  for(let yi=0;yi<=4;yi++){ const v=+(max - (yi/4)*(range)).toFixed(2); const y=margin.t+(yi/4)*H; ctx.fillText(v.toString(),8,y+4); }
+
+  ctx.fillStyle='#444'; ctx.font='12px system-ui';
+  const xTickCount = Math.min(6, labels.length);
+  for(let xi=0; xi<xTickCount; xi++){ const idx = Math.round((xi/(xTickCount-1||1))*(labels.length-1)); const txt = labels[idx]; const x = xScale(idx); ctx.fillText(txt, x-28, margin.t+H+18); }
+
+  const palette = ['#0b78e3','#ff8c00','#2ca02c','#d62728','#9467bd','#8c564b','#e377c2','#7f7f7f','#17becf','#bcbd22'];
+  forEachAsync(series, async (s, si)=>{
+    ctx.beginPath(); ctx.lineWidth=2.6; ctx.strokeStyle=palette[si%palette.length];
+    let started=false;
+    s.display.forEach((v,i)=>{ if(v===null||v===undefined||isNaN(v)){ started=false; return;} const x=xScale(i); const y=yScale(v); if(!started){ ctx.moveTo(x,y); started=true;} else ctx.lineTo(x,y); });
+    ctx.stroke();
+    ctx.fillStyle = palette[si%palette.length];
+    s.display.forEach((v,i)=>{ if(v===null||v===undefined||isNaN(v)) return; const x=xScale(i); const y=yScale(v); ctx.beginPath(); ctx.arc(x,y,3.2,0,Math.PI*2); ctx.fill(); });
+
+    if(document.getElementById('trendToggle').checked && series.length===1){
+      const numeric = s.display.map((v,i)=> ({x:i,y:v})).filter(p=>p.y!==null && !isNaN(p.y));
+      if(numeric.length>=2){
+        const lr = linearRegression(numeric.map(p=>p.x), numeric.map(p=>p.y));
+        const x0 = 0; const x1 = numeric[numeric.length-1].x;
+        const y0 = lr.intercept + lr.slope*x0; const y1 = lr.intercept + lr.slope*x1;
+        ctx.beginPath(); ctx.lineWidth=2; ctx.setLineDash([6,4]); ctx.strokeStyle='#222'; ctx.moveTo(xScale(x0), yScale(y0)); ctx.lineTo(xScale(x1), yScale(y1)); ctx.stroke(); ctx.setLineDash([]);
+      }
+    }
+  });
+
+  const legendY = 12; series.forEach((s,si)=>{ const lx = margin.l + si*140; ctx.fillStyle=palette[si%palette.length]; ctx.fillRect(lx,legendY-8,12,8); ctx.fillStyle='#222'; ctx.fillText(METRICS.find(m=>m.key===s.key).label, lx+18, legendY); });
+
+  if(series.length===1) await renderPhotoStrip(entries);
+  else document.getElementById('photoStrip').classList.add('hide');
+}
+
+/* small helper to run async within loop */
+async function forEachAsync(arr, fn){ for(let i=0;i<arr.length;i++) await fn(arr[i], i); }
+
+/* smoothing helper */
+function movingAverageByDate(entries, vals, windowDays){
+  const out = []; const dates = entries.map(e=>new Date(e.date));
+  for(let i=0;i<vals.length;i++){
+    const end = dates[i]; const start = new Date(end); start.setDate(start.getDate() - (windowDays-1));
+    let sum=0,count=0;
+    for(let j=0;j<vals.length;j++){ if(dates[j]>=start && dates[j]<=end){ const v=vals[j]; if(v!==null && v!==undefined && !isNaN(v)){ sum+=v; count++; } } }
+    out.push(count? +(sum/count).toFixed(3) : null);
+  }
+  return out;
+}
+
+/* linear regression */
+function linearRegression(xs, ys){ const n=xs.length; const sx=xs.reduce((a,b)=>a+b,0); const sy=ys.reduce((a,b)=>a+b,0); const sxx=xs.reduce((a,b)=>a+b*b,0); const sxy=xs.reduce((a,b,i)=>a+ b*ys[i],0); const slope=(n*sxy - sx*sy)/(n*sxx - sx*sx); const intercept=(sy - slope*sx)/n; return {slope,intercept}; }
+
+/* placeholders for photo strip */
+async function renderPhotoStrip(entries){
+  const strip = document.getElementById('photoStrip'); strip.innerHTML=''; const photos = await idbGetAll(STORE_PHOTOS);
+  for(const e of entries){
+    const p = photos.find(x=> x.id === e.id);
+    if(p && p.dataUrl){
+      const img = document.createElement('img'); img.src = p.dataUrl; img.className='photo-thumb'; img.title = e.date; strip.appendChild(img);
+    }
+  }
+  if(strip.children.length) strip.classList.remove('hide'); else strip.classList.add('hide');
+}
+
+/* timeline modal */
+document.getElementById('openTimeline').addEventListener('click', async ()=>{
+  const photos = await idbGetAll(STORE_PHOTOS); const timeline = document.getElementById('timelineStrip'); timeline.innerHTML='';
+  photos.sort((a,b)=>new Date(a.id) - new Date(b.id));
+  for(const p of photos){ const img=document.createElement('img'); img.src=p.dataUrl; img.style.height='80vh'; img.style.maxWidth='100%'; img.style.objectFit='contain'; timeline.appendChild(img); }
+  document.getElementById('modal').classList.remove('hide');
+});
+document.getElementById('closeModal').addEventListener('click', ()=> document.getElementById('modal').classList.add('hide'));
+
+/* export JPEG of canvas */
+document.getElementById('exportJpeg').addEventListener('click', ()=>{
+  const off = document.createElement('canvas'); const ratio = window.devicePixelRatio||1; off.width = canvas.width; off.height = canvas.height; const c = off.getContext('2d'); c.fillStyle='#ffffff'; c.fillRect(0,0,off.width,off.height); c.drawImage(canvas,0,0); const dataUrl = off.toDataURL('image/jpeg', 0.92); const a=document.createElement('a'); a.href=dataUrl; a.download='chart.jpg'; a.click();
+});
+
+/* controls */
+document.querySelectorAll('#metricControls input[type=checkbox]').forEach(box=> box.addEventListener('change', ()=> { activeMetric = null; renderChart(); }));
+document.getElementById('smoothingSelect').addEventListener('change', ()=> renderChart(activeMetric));
+document.getElementById('trendToggle').addEventListener('change', ()=> renderChart(activeMetric));
+
+/* standalone metric */
+function openStandaloneMetric(key){ activeMetric = key; document.querySelectorAll('.metric-name').forEach(el=>el.classList.remove('activeMetric')); const el = document.querySelector(`.metric-name[data-key="${key}"]`); if(el) el.classList.add('activeMetric'); renderChart(key); }
+
+/* refreshAll */
+async function refreshAll(){ document.getElementById('storageInfo').textContent = 'initializing...'; await renderTable(); await renderChart(activeMetric); document.getElementById('storageInfo').textContent = (await idbGetAll(STORE_ENTRIES)).length? 'saved':'empty'; }
+
+/* seed dummy data if empty (uses placeholders) */
+async function seedDummyDataIfEmpty(){
+  const entries = await idbGetAll(STORE_ENTRIES);
+  if(entries.length) return;
+  const now = new Date();
+  const base = {weight:180, bodyfat:22, waist:36, hips:40, chest:42, neck:15, biceps_l:13, biceps_r:13, thigh_l:22, thigh_r:22};
+  const list=[];
+  for(let i=12;i>=0;i--){
+    const d = new Date(now); d.setDate(now.getDate() - i*7);
+    const date = d.toISOString().slice(0,10);
+    const values={};
+    Object.keys(base).forEach((k,idx)=> values[k] = +(base[k] + (Math.random()*2-1) + idx*0.02).toFixed(2));
+    const entry = { id: 'd'+uid(), date, notes: 'Dummy entry', values, created: new Date().toISOString(), dummy: true };
+    list.push(entry);
+  }
+  for(let i=0;i<list.length;i++){
+    const e = list[i];
+    await idbPut(STORE_ENTRIES, e);
+    if(i%3===0){
+      // cycle placeholders
+      const img = PLACEHOLDERS[i % PLACEHOLDERS.length];
+      await idbPut(STORE_PHOTOS, {id: e.id, dataUrl: img, name: 'placeholder.jpg', type: 'image/jpeg'});
+    }
+  }
+}
+
+/* initial run */
+(async function(){ await seedDummyDataIfEmpty(); await refreshAll(); })();
+
+</script>
+</body>
+</html>
